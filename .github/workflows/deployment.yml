@@ -1,0 +1,86 @@
+name: Portfolio
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+jobs:
+  
+  # Build Job ------------------------------------------------------------------------>
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    
+    # Log in to GitHub Packages Docker registry
+    - name: Login to GitHub Packages
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_TOKEN }}
+        
+    # Build Docker Image
+    - name: Build Docker Image
+      run: docker build . -t ghcr.io/${{ github.repository }}/akash-karmakar:${{ github.run_number }}
+
+    # Push Docker Image to GitHub Package Registry
+    - name: Push Docker Image
+      run: docker push ghcr.io/${{ github.repository }}/akash-karmakar:${{ github.run_number }}
+
+    # Persist IMAGE_TAG as output to be passed to the deploy job
+    outputs:
+      image_tag: ghcr.io/${{ github.repository }}/akash-karmakar:${{ github.run_number }}
+
+  # Deploy Job ------------------------------------------------------------------------>
+  # deploy:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Add AWS instance to known hosts
+  #     run: |
+  #       mkdir -p ~/.ssh
+  #       ssh-keyscan -H ${{ secrets.AWS_INSTANCE_IP }} >> ~/.ssh/known_hosts
+
+  #   # Deploy Docker Image to AWS Instance
+  #   - name: Deploy to AWS Instance
+  #     env:
+  #       AWS_INSTANCE_IP: ${{ secrets.AWS_INSTANCE_IP }}
+  #       AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+  #       AWS_SSH_USERNAME: ${{ secrets.AWS_SSH_USERNAME }}
+  #       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+  #       IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+  #     run: |
+      
+  #       # Write the SSH private key to a file
+  #       echo "$AWS_SSH_KEY" > private_key.pem
+  #       chmod 600 private_key.pem
+
+  #       # SSH into the AWS instance and deploy the Docker image
+  #       ssh -i private_key.pem -o StrictHostKeyChecking=no $AWS_SSH_USERNAME@$AWS_INSTANCE_IP << EOF
+        
+  #         # Stop and remove the existing container (if it exists)
+  #         CONTAINER_ID=\`docker ps -a -q -f name=api-service-container\`
+  #         if [ -n "\$CONTAINER_ID" ]; then
+  #           docker stop api-service-container || true
+  #           docker rm api-service-container
+  #         fi
+
+  #         # Remove all images from the same repository to avoid keeping old images
+  #         IMAGE_IDS=\$(docker images ghcr.io/${{ github.repository }}/api-service -q)
+  #         if [ -n "\$IMAGE_IDS" ]; then
+  #           docker rmi -f \$IMAGE_IDS
+  #         fi
+
+  #         # Log in to GitHub Packages and pull the new Docker image
+  #         echo $GHCR_TOKEN | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+  #         docker pull $IMAGE_TAG
+
+  #         # Run the new Docker container
+  #         docker run -itd --net=host --name api-service-container $IMAGE_TAG
+          
+  #       EOF
+
+  #       # Clean up the private key file
+  #       rm private_key.pem
